@@ -1,0 +1,14 @@
+artifact_uri: mlflow-artifacts:/433192691012177351/4fc22703f9b7419986de14209dc60547/artifacts
+end_time: 1755506755629
+entry_point_name: ''
+experiment_id: '433192691012177351'
+lifecycle_stage: active
+run_id: 4fc22703f9b7419986de14209dc60547
+run_name: lightgbm
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1755506714187
+status: 3
+tags: []
+user_id: dyzhaol

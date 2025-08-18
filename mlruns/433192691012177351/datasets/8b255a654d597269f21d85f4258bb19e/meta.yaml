@@ -1,0 +1,18 @@
+digest: 150c5fbf
+name: solar_generation_dataset
+profile: '{"num_rows": 3600, "num_elements": 61200}'
+schema: '{"mlflow_colspec": [{"type": "datetime", "name": "timestamp", "required":
+  true}, {"type": "long", "name": "S1", "required": true}, {"type": "long", "name":
+  "S2", "required": true}, {"type": "long", "name": "S3", "required": true}, {"type":
+  "long", "name": "S4", "required": true}, {"type": "long", "name": "generation",
+  "required": true}, {"type": "double", "name": "t2m", "required": true}, {"type":
+  "double", "name": "skt", "required": true}, {"type": "double", "name": "ws10m",
+  "required": true}, {"type": "double", "name": "wd10m", "required": true}, {"type":
+  "double", "name": "dswrf", "required": true}, {"type": "double", "name": "dlwrf",
+  "required": true}, {"type": "double", "name": "uswrf", "required": true}, {"type":
+  "double", "name": "ulwrf", "required": true}, {"type": "double", "name": "tp", "required":
+  true}, {"type": "double", "name": "sp", "required": true}, {"type": "double", "name":
+  "rh", "required": true}]}'
+source: '{"tags": {"mlflow.user": "dyzhaol", "mlflow.source.name": "d:/\u9879\u76ee/\u5b9e\u9a8c\u4e2d\u5fc3\u5149\u4f0f\u53d1\u7535\u9884\u6d4b/solar_power_forecast_train_lgb.py",
+  "mlflow.source.type": "LOCAL", "mlflow.source.git.commit": "01bd7e08920acec00122beb059912af4088d0ce3"}}'
+source_type: code

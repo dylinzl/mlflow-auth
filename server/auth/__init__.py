@@ -435,8 +435,17 @@ def validate_can_delete_user():
     return False
 
 
+def validate_can_create_experiment():
+    """Validate if the user can create experiments - only admins allowed"""
+    # Only admins can create experiments
+    # If this validator is called, it means the user is not an admin
+    # (admins bypass all validators in _before_request)
+    return False
+
+
 BEFORE_REQUEST_HANDLERS = {
     # Routes for experiments
+    CreateExperiment: validate_can_create_experiment,
     GetExperiment: validate_can_read_experiment,
     GetExperimentByName: validate_can_read_experiment_by_name,
     DeleteExperiment: validate_can_delete_experiment,
@@ -592,8 +601,8 @@ def authenticate_request_basic_auth() -> Authorization | Response:
 
 
 def authenticate_request_session() -> Authorization | Response:
-    """Authenticate the request using session-based auth."""
-    # Check if user info exists in session
+    """Authenticate the request using session-based auth with Basic Auth fallback."""
+    # First, try session-based auth (for browser requests)
     if "username" in session and "user_id" in session:
         # Check if session has expired
         if "login_time" in session:
@@ -602,18 +611,33 @@ def authenticate_request_session() -> Authorization | Response:
             if datetime.now() - login_time > session_lifetime:
                 # Session expired, clear session
                 session.clear()
-                return _handle_unauthenticated_request()
-        
-        # Session is valid, create Authorization object for compatibility
-        # Use the same pattern as JWT auth: Authorization(auth_type="session", data=user_info)
-        user_data = {
-            "username": session["username"],
-            "user_id": session["user_id"],
-            "is_admin": session.get("is_admin", False)
-        }
-        return Authorization(auth_type="session", data=user_data)
-    else:
-        return _handle_unauthenticated_request()
+                # Continue to try Basic Auth below
+            else:
+                # Session is valid, create Authorization object for compatibility
+                user_data = {
+                    "username": session["username"],
+                    "user_id": session["user_id"],
+                    "is_admin": session.get("is_admin", False)
+                }
+                return Authorization(auth_type="session", data=user_data)
+        else:
+            # Session exists but no login_time, assume valid for compatibility
+            user_data = {
+                "username": session["username"],
+                "user_id": session["user_id"],
+                "is_admin": session.get("is_admin", False)
+            }
+            return Authorization(auth_type="session", data=user_data)
+    
+    # If no valid session, try Basic Auth (for API clients)
+    if request.authorization is not None:
+        username = request.authorization.username
+        password = request.authorization.password
+        if store.authenticate_user(username, password):
+            return request.authorization
+    
+    # Neither session nor Basic Auth worked
+    return _handle_unauthenticated_request()
 
 
 def _get_current_user_session():

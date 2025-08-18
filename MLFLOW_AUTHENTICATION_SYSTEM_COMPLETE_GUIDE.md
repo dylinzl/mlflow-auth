@@ -571,9 +571,442 @@ res = make_response("You are not authenticated. Please login at /login to access
 3. **权限审计**: 定期审查用户权限分配
 4. **浏览器测试**: 确认各浏览器下无Basic Auth弹窗
 
+---
+
+## 混合认证系统和细粒度权限控制
+
+### 2024年12月 - 混合认证系统实现
+
+#### 背景和挑战
+
+在实现现代化会话认证系统后，我们遇到了一个关键问题：**如何让API客户端（Python代码）也能享受细粒度的权限控制？**
+
+**核心挑战**：
+- 浏览器用户需要现代化的会话管理体验
+- API客户端需要简单的Basic Auth认证方式
+- 两种认证方式都需要支持相同的权限控制机制
+
+#### 解决方案：混合认证系统
+
+**设计理念**：
+```
+认证流程 = 会话认证（浏览器） + Basic Auth回退（API客户端）
+权限控制 = 统一的权限验证机制（不区分认证方式）
+```
+
+#### 技术实现
+
+**增强的认证函数**：
+```python
+def authenticate_request_session() -> Authorization | Response:
+    """混合认证：会话认证 + Basic Auth回退"""
+    # 1. 首先尝试会话认证（浏览器请求）
+    if "username" in session and "user_id" in session:
+        # 验证会话有效性和超时
+        # 返回会话用户信息
+        
+    # 2. 会话无效时，尝试Basic Auth（API请求）
+    if request.authorization is not None:
+        username = request.authorization.username
+        password = request.authorization.password
+        if store.authenticate_user(username, password):
+            return request.authorization
+    
+    # 3. 两种认证都失败
+    return _handle_unauthenticated_request()
+```
+
+#### 权限控制机制
+
+**统一权限验证流程**：
+1. **用户识别**：从认证信息中提取用户名（不区分认证方式）
+2. **权限查询**：根据用户名和资源ID查询数据库权限设置
+3. **权限验证**：每个API操作检查用户是否具有所需权限级别
+
+**权限级别说明**：
+- **READ**: 查看实验、运行、参数、指标
+- **EDIT**: 创建运行、记录数据、设置标签
+- **MANAGE**: 删除实验、管理权限、完全控制
+
+### 客户端代码实现
+
+#### 有权限用户的代码示例
+
+```python
+# dylinzl 用户 - 具有EDIT权限
+import os
+import mlflow
+from mlflow import MlflowClient
+
+# MLflow 配置
+MLFLOW_TRACKING_URI = "http://10.120.130.187:5000"
+EXPERIMENT_NAME = "Experiment-Center-Solar-Power-Forecast"
+
+# 设置用户凭据
+os.environ["MLFLOW_TRACKING_USERNAME"] = "dylinzl"
+os.environ["MLFLOW_TRACKING_PASSWORD"] = "password"
+
+# 初始化MLflow
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+client = MlflowClient()
+
+# 这些操作将成功执行（具有EDIT权限）
+try:
+    # 获取或创建实验
+    experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
+    experiment_id = experiment.experiment_id
+    mlflow.set_experiment(EXPERIMENT_NAME)
+    
+    # 创建运行并记录数据
+    with mlflow.start_run() as run:
+        mlflow.log_param("model_type", "lightgbm")
+        mlflow.log_metric("accuracy", 0.95)
+        mlflow.log_metric("f1_score", 0.92)
+        print(f"✅ 运行创建成功: {run.info.run_id}")
+        
+    # 设置实验标签
+    client.set_experiment_tag(experiment_id, "project", "solar_forecast")
+    print("✅ 实验标签设置成功")
+    
+except Exception as e:
+    print(f"❌ 操作失败: {e}")
+```
+
+#### 无权限用户的代码示例
+
+```python
+# dyzhaol 用户 - 只有READ权限或无权限
+import os
+import mlflow
+from mlflow import MlflowClient
+
+# MLflow 配置
+MLFLOW_TRACKING_URI = "http://10.120.130.187:5000"
+EXPERIMENT_NAME = "Experiment-Center-Solar-Power-Forecast"
+
+# 设置用户凭据
+os.environ["MLFLOW_TRACKING_USERNAME"] = "dyzhaol"
+os.environ["MLFLOW_TRACKING_PASSWORD"] = "password"
+
+# 初始化MLflow
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+client = MlflowClient()
+
+try:
+    # 这个操作可能成功（如果有READ权限）
+    experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
+    print(f"✅ 成功获取实验: {experiment.name}")
+    
+    # 这些操作将失败（没有EDIT权限）
+    mlflow.set_experiment(EXPERIMENT_NAME)
+    with mlflow.start_run() as run:
+        mlflow.log_param("test", "value")  # 这里会抛出403 Forbidden
+        
+except mlflow.exceptions.MlflowException as e:
+    if "403" in str(e) or "Forbidden" in str(e):
+        print(f"❌ 权限不足: {e}")
+    else:
+        print(f"❌ 其他错误: {e}")
+```
+
+### 权限控制测试
+
+我们提供了完整的权限测试脚本 `test_permission_control.py`，用于验证不同用户的权限控制：
+
+**测试场景**：
+1. **READ权限测试**：获取实验信息
+2. **EDIT权限测试**：创建运行、记录数据
+3. **MANAGE权限测试**：删除实验、管理权限
+
+**预期结果**：
+- **dylinzl**（EDIT权限）：前两个测试成功，MANAGE测试失败
+- **dyzhaol**（READ权限或无权限）：只有READ测试成功
+
+### 权限分配管理
+
+#### 通过Web界面分配权限
+
+1. **管理员登录**：访问 `http://10.120.130.187:5000`
+2. **进入管理面板**：点击"管理面板"按钮
+3. **实验管理**：选择"实验管理"
+4. **权限配置**：
+   - 为 `dylinzl` 分配 `EDIT` 权限
+   - 为 `dyzhaol` 分配 `READ` 权限或不分配权限
+
+#### 通过API分配权限
+
+```python
+from mlflow.server import get_app_client
+
+# 使用管理员凭据
+os.environ["MLFLOW_TRACKING_USERNAME"] = "admin"
+os.environ["MLFLOW_TRACKING_PASSWORD"] = "admin_password"
+
+# 获取认证客户端
+auth_client = get_app_client("basic-auth", tracking_uri="http://10.120.130.187:5000")
+
+# 分配权限
+auth_client.create_experiment_permission(
+    experiment_id="1",
+    username="dylinzl", 
+    permission="EDIT"
+)
+
+auth_client.create_experiment_permission(
+    experiment_id="1",
+    username="dyzhaol", 
+    permission="READ"
+)
+```
+
+### 系统架构优势
+
+#### 1. 认证方式灵活性
+- **浏览器用户**：享受现代化会话管理（无需重复登录）
+- **API客户端**：使用简单的环境变量认证
+- **完全透明**：权限控制对两种认证方式完全一致
+
+#### 2. 权限控制精确性
+- **资源级别**：每个实验可以有不同的权限设置
+- **用户级别**：每个用户可以有不同的权限级别
+- **操作级别**：不同API操作需要不同权限级别
+
+#### 3. 安全性保障
+- **认证验证**：每个请求都必须通过认证
+- **权限检查**：每个操作都会验证权限
+- **会话管理**：自动超时和安全登出
+
+### 故障排除
+
+#### 常见权限错误
+
+**错误1：401 Unauthorized**
+```
+MlflowException: API request failed with error code 401
+Response body: 'You are not authenticated'
+```
+**解决方案**：检查用户名密码是否正确
+
+**错误2：403 Forbidden**
+```
+MlflowException: API request failed with error code 403
+Response body: 'Insufficient permissions'
+```
+**解决方案**：检查用户是否具有所需权限级别
+
+#### 调试步骤
+
+1. **验证认证**：使用 `test_permission_control.py` 测试用户认证
+2. **检查权限**：在管理面板查看用户权限分配
+3. **查看日志**：检查服务器日志了解详细错误信息
+4. **测试API**：使用curl测试API端点响应
+
+---
+
+## 关键安全修复：实验创建权限控制
+
+### 2024年12月 - 实验创建权限漏洞修复
+
+#### 发现的安全问题
+
+在实施混合认证系统后，发现了一个**严重的权限漏洞**：
+
+**问题描述**：
+- 任何经过认证的用户都可以创建新实验
+- 用户创建实验后自动获得该实验的 `MANAGE` 权限
+- 这违背了"只允许管理员创建实验，然后分配给用户"的安全原则
+
+**漏洞原理**：
+```python
+# 原有代码问题
+BEFORE_REQUEST_HANDLERS = {
+    GetExperiment: validate_can_read_experiment,      # ✅ 有权限验证
+    UpdateExperiment: validate_can_update_experiment, # ✅ 有权限验证
+    DeleteExperiment: validate_can_delete_experiment, # ✅ 有权限验证
+    # CreateExperiment: 缺失！                        # ❌ 没有权限验证
+}
+
+# 创建后自动分配管理权限（问题根源）
+AFTER_REQUEST_PATH_HANDLERS = {
+    CreateExperiment: set_can_manage_experiment_permission,  # 自动给创建者MANAGE权限
+}
+```
+
+#### 安全修复方案
+
+**修复原理**：
+- 添加 `validate_can_create_experiment` 权限验证函数
+- 只允许管理员用户创建实验
+- 普通用户尝试创建实验时返回 `403 Forbidden`
+
+**代码实现**：
+```python
+def validate_can_create_experiment():
+    """Validate if the user can create experiments - only admins allowed"""
+    # Only admins can create experiments
+    # If this validator is called, it means the user is not an admin
+    # (admins bypass all validators in _before_request)
+    return False
+
+BEFORE_REQUEST_HANDLERS = {
+    # Routes for experiments
+    CreateExperiment: validate_can_create_experiment,  # 🔒 新增权限验证
+    GetExperiment: validate_can_read_experiment,
+    UpdateExperiment: validate_can_update_experiment,
+    DeleteExperiment: validate_can_delete_experiment,
+    # ... 其他权限验证
+}
+```
+
+#### 修复后的行为
+
+**管理员用户**：
+- ✅ 可以通过Web管理面板创建实验
+- ✅ 可以通过API创建实验 (`mlflow.create_experiment`)
+- ✅ 创建后自动获得 `MANAGE` 权限
+
+**普通用户**：
+- ❌ 无法通过API创建实验
+- ❌ `mlflow.create_experiment` 调用会返回 `403 Forbidden`
+- ✅ 仍可以访问已分配权限的现有实验
+
+#### 客户端代码影响
+
+**修复前（存在安全漏洞）**：
+```python
+# 任何用户都可以执行
+os.environ["MLFLOW_TRACKING_USERNAME"] = "ordinary_user"
+os.environ["MLFLOW_TRACKING_PASSWORD"] = "password"
+
+# 这会成功创建实验（安全漏洞！）
+experiment_id = mlflow.create_experiment("new_experiment")
+```
+
+**修复后（安全的行为）**：
+```python
+# 普通用户
+os.environ["MLFLOW_TRACKING_USERNAME"] = "ordinary_user" 
+os.environ["MLFLOW_TRACKING_PASSWORD"] = "password"
+
+try:
+    # 这会失败并抛出403错误
+    experiment_id = mlflow.create_experiment("new_experiment")
+except mlflow.exceptions.MlflowException as e:
+    print(f"❌ 权限不足，无法创建实验: {e}")
+    # 使用管理员预先创建的实验
+    experiment = mlflow.get_experiment_by_name("existing_experiment")
+    mlflow.set_experiment("existing_experiment")
+
+# 管理员用户
+os.environ["MLFLOW_TRACKING_USERNAME"] = "admin"
+os.environ["MLFLOW_TRACKING_PASSWORD"] = "admin_password"
+
+# 这会成功创建实验
+experiment_id = mlflow.create_experiment("new_experiment")
+```
+
+#### 推荐的工作流程
+
+**1. 管理员工作流**：
+```python
+# 管理员创建实验
+os.environ["MLFLOW_TRACKING_USERNAME"] = "admin"
+os.environ["MLFLOW_TRACKING_PASSWORD"] = "admin_password"
+
+# 创建实验
+experiment_id = mlflow.create_experiment("Solar-Power-Forecast")
+
+# 通过管理面板或API分配权限给用户
+from mlflow.server import get_app_client
+auth_client = get_app_client("basic-auth", tracking_uri="http://server:5000")
+auth_client.create_experiment_permission(experiment_id, "dylinzl", "EDIT")
+auth_client.create_experiment_permission(experiment_id, "dyzhaol", "READ")
+```
+
+**2. 普通用户工作流**：
+```python
+# 用户使用预分配的实验（修复后的安全代码）
+import os
+import mlflow
+from mlflow import MlflowClient
+from mlflow.exceptions import MlflowException
+
+# --- MLflow 配置 ---
+MLFLOW_TRACKING_URI = "http://10.120.130.187:5000"
+EXPERIMENT_NAME = "Experiment-Center-Solar-Power-Forecast"  # 管理员预创建的实验
+MODEL_NAME = "solar_power_forecast_lightgbm"
+
+os.environ["MLFLOW_TRACKING_USERNAME"] = 'dylinzl'
+os.environ["MLFLOW_TRACKING_PASSWORD"] = 'password'
+
+# 设置 MLflow 跟踪服务器
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+client = MlflowClient()
+
+# 修复后的安全代码：不尝试创建实验，直接使用现有实验
+try:
+    # 直接获取现有实验（不尝试创建）
+    experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
+    if experiment is None:
+        raise MlflowException(f"实验 '{EXPERIMENT_NAME}' 不存在，请联系管理员创建")
+    
+    experiment_id = experiment.experiment_id
+    mlflow.set_experiment(EXPERIMENT_NAME)
+    
+    # 现在可以正常使用实验（如果有权限）
+    with mlflow.start_run():
+        mlflow.log_param("model_type", "lightgbm")
+        mlflow.log_metric("accuracy", 0.95)
+        mlflow.log_metric("f1_score", 0.92)
+        print("✅ 运行创建成功")
+        
+except MlflowException as e:
+    if "403" in str(e) or "Forbidden" in str(e):
+        print(f"❌ 权限不足: {e}")
+        print("请联系管理员分配实验权限")
+    elif "not found" in str(e).lower() or "not exist" in str(e).lower():
+        print(f"❌ 实验不存在: {e}")
+        print("请联系管理员创建实验")
+    else:
+        print(f"❌ 其他错误: {e}")
+```
+
+#### 安全验证测试
+
+**测试脚本**：
+```python
+def test_experiment_creation_security():
+    """测试实验创建权限控制"""
+    
+    # 测试1: 管理员可以创建实验
+    os.environ["MLFLOW_TRACKING_USERNAME"] = "admin"
+    os.environ["MLFLOW_TRACKING_PASSWORD"] = "admin_password"
+    
+    try:
+        exp_id = mlflow.create_experiment("admin_test_experiment")
+        print("✅ 管理员创建实验成功")
+    except Exception as e:
+        print(f"❌ 管理员创建实验失败: {e}")
+    
+    # 测试2: 普通用户无法创建实验
+    os.environ["MLFLOW_TRACKING_USERNAME"] = "ordinary_user"
+    os.environ["MLFLOW_TRACKING_PASSWORD"] = "password"
+    
+    try:
+        exp_id = mlflow.create_experiment("user_test_experiment")
+        print("❌ 安全漏洞：普通用户不应该能创建实验！")
+    except mlflow.exceptions.MlflowException as e:
+        if "403" in str(e) or "Forbidden" in str(e):
+            print("✅ 安全正常：普通用户无法创建实验")
+        else:
+            print(f"❌ 意外错误: {e}")
+```
+
 ### 未来扩展方向
 
 1. **批量操作**: 支持批量删除用户和实验
 2. **操作审计**: 记录所有管理操作的审计日志
 3. **权限模板**: 预定义权限模板简化权限分配
 4. **API接口**: 提供完整的管理API供外部系统调用
+5. **细粒度权限**: 支持更精细的权限控制（如特定标签、特定运行等）
+6. **实验创建权限扩展**: 考虑允许特定用户组创建实验的功能

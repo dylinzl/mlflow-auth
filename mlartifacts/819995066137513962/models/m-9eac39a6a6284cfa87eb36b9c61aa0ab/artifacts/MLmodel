@@ -1,0 +1,56 @@
+artifact_path: mlflow-artifacts:/819995066137513962/models/m-9eac39a6a6284cfa87eb36b9c61aa0ab/artifacts
+flavors:
+  python_function:
+    cloudpickle_version: 3.0.0
+    code: null
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.pyfunc.model
+    python_model: python_model.pkl
+    python_version: 3.12.7
+    streamable: false
+is_signature_from_type_hint: false
+mlflow_version: 3.2.0
+model_id: m-9eac39a6a6284cfa87eb36b9c61aa0ab
+model_size_bytes: 1538360
+model_uuid: m-9eac39a6a6284cfa87eb36b9c61aa0ab
+prompts: null
+run_id: 5fc96d6509ce4f6ea5c53d6b5f5114ff
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "double", "name": "t2m", "required": true}, {"type": "double",
+    "name": "skt", "required": true}, {"type": "double", "name": "ws10m", "required":
+    true}, {"type": "double", "name": "wd10m", "required": true}, {"type": "double",
+    "name": "dswrf", "required": true}, {"type": "double", "name": "dlwrf", "required":
+    true}, {"type": "double", "name": "uswrf", "required": true}, {"type": "double",
+    "name": "ulwrf", "required": true}, {"type": "double", "name": "tp", "required":
+    true}, {"type": "double", "name": "sp", "required": true}, {"type": "double",
+    "name": "rh", "required": true}, {"type": "double", "name": "solar_zenith", "required":
+    true}, {"type": "double", "name": "solar_azimuth", "required": true}, {"type":
+    "double", "name": "ksi", "required": true}, {"type": "double", "name": "hour_sin",
+    "required": true}, {"type": "double", "name": "hour_cos", "required": true}, {"type":
+    "double", "name": "month_sin", "required": true}, {"type": "double", "name": "month_cos",
+    "required": true}, {"type": "double", "name": "day_of_year_sin", "required": true},
+    {"type": "double", "name": "day_of_year_cos", "required": true}, {"type": "double",
+    "name": "day_of_week_sin", "required": true}, {"type": "double", "name": "day_of_week_cos",
+    "required": true}, {"type": "double", "name": "generation_lag_24", "required":
+    true}, {"type": "double", "name": "generation_lag_168", "required": true}, {"type":
+    "double", "name": "generation_24h_ago_rolling_mean_3h", "required": true}, {"type":
+    "double", "name": "generation_24h_ago_rolling_std_3h", "required": true}, {"type":
+    "double", "name": "generation_24h_ago_rolling_max_3h", "required": true}, {"type":
+    "double", "name": "dswrf_rolling_avg_3h", "required": true}, {"type": "double",
+    "name": "dswrf_rolling_std_3h", "required": true}, {"type": "double", "name":
+    "temp_drop", "required": true}, {"type": "double", "name": "heat_index", "required":
+    true}, {"type": "double", "name": "ws10m_rolling_std_6h", "required": true}, {"type":
+    "double", "name": "zenith_x_ksi", "required": true}, {"type": "double", "name":
+    "temp_x_dswrf", "required": true}]'
+  outputs: '[{"type": "tensor", "tensor-spec": {"dtype": "float64", "shape": [-1,
+    24]}}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2025-08-18 08:10:30.637664'
