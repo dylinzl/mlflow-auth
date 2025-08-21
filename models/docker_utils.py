@@ -101,14 +101,42 @@ def generate_dockerfile(
                 "switch to UBUNTU_BASE_IMAGE to enable java installation."
             )
         setup_python_venv_steps = (
-            "RUN apt-get -y update && apt-get install -y --no-install-recommends nginx"
+            """
+            # 使用清华大学镜像源
+            RUN rm -rf /etc/apt/sources.list /etc/apt/sources.list.d/* && \\
+                echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm main" > /etc/apt/sources.list && \\
+                echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian-security bookworm-security main" >> /etc/apt/sources.list && \\
+                apt-get clean && \\
+                rm -rf /var/lib/apt/lists/*
+
+            RUN apt-get -y update && apt-get install -y --no-install-recommends build-essential gcc python3-dev nginx
+            """
         )
 
     elif base_image == UBUNTU_BASE_IMAGE:
         setup_python_venv_steps = (
-            "RUN apt-get -y update && DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y "
-            "--no-install-recommends wget curl nginx ca-certificates bzip2 build-essential cmake "
-            "git-core\n\n"
+            """
+            # 使用清华大学镜像源
+            RUN rm -rf /etc/apt/sources.list /etc/apt/sources.list.d/* && \\
+                echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm main" > /etc/apt/sources.list && \\
+                echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian-security bookworm-security main" >> /etc/apt/sources.list && \\
+                apt-get clean && \\
+                rm -rf /var/lib/apt/lists/*
+
+            # 更新软件包列表（最多重试3次）
+            RUN set -e; \\
+                for i in 1 2 3; do \\
+                    apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecureRepositories=true && break; \\
+                    sleep 5; \\
+                done
+
+            # 安装构建工具（最多重试3次）
+            RUN set -e; \\
+                for i in 1 2 3; do \\
+                    apt-get install -y --no-install-recommends build-essential gcc python3-dev nginx && break; \\
+                    sleep 5; \\
+                done
+            """
         )
         setup_python_venv_steps += (
             SETUP_MINICONDA if env_manager == em.CONDA else SETUP_PYENV_AND_VIRTUALENV
@@ -188,7 +216,7 @@ def _pip_mlflow_install_step(dockerfile_context_dir, mlflow_home):
             "RUN pip install /opt/mlflow"
         )
     else:
-        return f"# Install MLflow\nRUN pip install mlflow=={VERSION}"
+        return f"# Install MLflow\nRUN pip install mlflow=={VERSION} -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"
 
 
 def build_image_from_context(context_dir: str, image_name: str):

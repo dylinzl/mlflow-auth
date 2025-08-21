@@ -95,7 +95,7 @@ def _install_pyfunc_deps(
             "'mlserver-mlflow>=1.2.0,!=1.3.1,<2.0.0'",
         ]
 
-    install_server_deps = [f"pip install {' '.join(server_deps)}"]
+    install_server_deps = [f"pip install {' '.join(server_deps)} -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"]
     if Popen(["bash", "-c", " && ".join(activate_cmd + install_server_deps)]).wait() != 0:
         raise Exception("Failed to install serving dependencies into the model environment.")
 
@@ -106,9 +106,9 @@ def _install_pyfunc_deps(
             # If the MLflow source code is copied to the container,
             # we always need to run `pip install /opt/mlflow` otherwise
             # the MLflow dependencies are not installed.
-            install_mlflow_cmd = ["pip install /opt/mlflow/."]
+            install_mlflow_cmd = ["pip install /opt/mlflow/. -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"]
         elif install_mlflow:
-            install_mlflow_cmd = [f"pip install mlflow=={MLFLOW_VERSION}"]
+            install_mlflow_cmd = [f"pip install mlflow=={MLFLOW_VERSION} -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"]
         else:
             install_mlflow_cmd = []
 
@@ -141,7 +141,7 @@ def _install_model_dependencies_to_env(model_path, env_manager) -> list[str]:
         python_env = _PythonEnv.from_yaml(python_env_config_path)
         deps = " ".join(python_env.build_dependencies + python_env.dependencies)
         deps = deps.replace("requirements.txt", os.path.join(model_path, "requirements.txt"))
-        if Popen(["bash", "-c", f"python -m pip install {deps}"]).wait() != 0:
+        if Popen(["bash", "-c", f"python -m pip install {deps} -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn"]).wait() != 0:
             raise Exception("Failed to install model dependencies.")
         return []
 
