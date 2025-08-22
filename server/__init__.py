@@ -308,10 +308,11 @@ def _generate_auth_navigation_html(auth_components):
 
 
 def _generate_docker_build_html():
-    """生成通用Docker构建组件HTML"""
+    """生成增强的Docker构建、推送和模型部署组件HTML"""
     return r'''
-    <!-- 通用Docker构建组件 -->
-    <div id="mlflow-docker-build-container" style="display: none;">
+    <!-- 增强的Docker和模型部署组件 -->
+    <div id="mlflow-model-actions-container" style="display: none;">
+        <!-- Docker构建按钮 -->
         <button id="mlflow-docker-build-btn" style="
             position: fixed; 
             top: 95px; 
@@ -328,12 +329,14 @@ def _generate_docker_build_html():
             box-shadow: 0 2px 8px rgba(66,153,224,0.3);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             transition: all 0.2s ease;
-        " onmouseover="this.style.background='#4299E0'" onmouseout="this.style.background='#4299E0'">
-            🐳构建Docker镜像
+        " onmouseover="this.style.background='#3182ce'" onmouseout="this.style.background='#4299E0'">
+            Build Docker Image
         </button>
+        
+
     </div>
     
-    <!-- 构建配置对话框 -->
+    <!-- Docker构建和推送配置对话框 -->
     <div id="mlflow-docker-build-dialog" style="
         display: none;
         position: fixed;
@@ -353,17 +356,20 @@ def _generate_docker_build_html():
             background: white;
             border-radius: 8px;
             padding: 24px;
-            width: 400px;
+            width: 500px;
             max-width: 90vw;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+            max-height: 80vh;
+            overflow-y: auto;
         ">
             <div style="
                 font-size: 18px;
                 font-weight: 600;
-                margin-bottom: 16px;
+                margin-bottom: 20px;
                 color: #333;
-            ">🐳 Docker镜像构建配置</div>
+            ">🐳 Docker镜像构建与推送配置</div>
             
+            <!-- 基本配置 -->
             <div style="margin-bottom: 16px;">
                 <label style="
                     display: block;
@@ -381,7 +387,7 @@ def _generate_docker_build_html():
                 " placeholder="my-model-v1">
             </div>
             
-            <div style="margin-bottom: 20px;">
+            <div style="margin-bottom: 16px;">
                 <label style="
                     display: block;
                     margin-bottom: 6px;
@@ -395,18 +401,23 @@ def _generate_docker_build_html():
                     border-radius: 4px;
                     font-size: 14px;
                     box-sizing: border-box;
-                " placeholder="留空让MLflow自动选择最佳镜像，或输入自定义镜像">
+                " placeholder="留空让MLflow自动选择最佳镜像">
+            </div>
+            
+            <!-- 推送配置 -->
                 <div style="
-                    font-size: 12px;
-                    color: #666;
-                    margin-top: 4px;
-                ">💡 留空: MLflow自动选择 | 示例: python:3.12-slim, ubuntu:20.04, nvidia/cuda:11.8-runtime-ubuntu20.04</div>
+                border-top: 1px solid #e8e8e8;
+                padding-top: 16px;
+                margin-top: 16px;
+            ">
+
             </div>
             
             <div style="
                 display: flex;
                 justify-content: flex-end;
                 gap: 12px;
+                margin-top: 20px;
             ">
                 <button onclick="cancelBuild()" style="
                     background: #f5f5f5;
@@ -417,7 +428,7 @@ def _generate_docker_build_html():
                     cursor: pointer;
                     font-size: 14px;
                     ">取消</button>
-                <button onclick="startBuild()" style="
+                <button onclick="startBuildAndPush()" style="
                     background: #1890ff;
                     color: white;
                     border: none;
@@ -430,6 +441,10 @@ def _generate_docker_build_html():
         </div>
     </div>
     
+
+    
+
+    
     <script>
     (function() {
         'use strict';
@@ -440,9 +455,9 @@ def _generate_docker_build_html():
             return hash.match(/^#\/models\/[^\/]+\/versions\/[^\/]+$/);
         }
         
-        // 显示Docker构建按钮
-        function showDockerBuildButton() {
-            const container = document.getElementById('mlflow-docker-build-container');
+        // 显示模型操作按钮组
+        function showModelActionButtons() {
+            const container = document.getElementById('mlflow-model-actions-container');
             if (container && isModelVersionPage()) {
                 container.style.display = 'block';
             } else if (container) {
@@ -463,6 +478,10 @@ def _generate_docker_build_html():
             return null;
         }
         
+        // ================================
+        // Docker构建和推送功能
+        // ================================
+        
         // 显示构建对话框
         function showBuildDialog() {
             const modelInfo = getCurrentModelInfo();
@@ -476,17 +495,21 @@ def _generate_docker_build_html():
             document.getElementById('docker-image-name').value = defaultImageName;
             document.getElementById('docker-base-image').value = '';
             
+
+            
             // 显示对话框
             document.getElementById('mlflow-docker-build-dialog').style.display = 'block';
         }
+        
+
         
         // 全局函数：取消构建
         window.cancelBuild = function() {
             document.getElementById('mlflow-docker-build-dialog').style.display = 'none';
         };
         
-        // 全局函数：开始构建
-        window.startBuild = function() {
+        // 全局函数：开始构建和推送
+        window.startBuildAndPush = function() {
             const modelInfo = getCurrentModelInfo();
             if (!modelInfo) {
                 alert('无法获取模型信息');
@@ -515,7 +538,7 @@ def _generate_docker_build_html():
                 requestData.base_image = baseImage;
             }
             
-            // 发起构建请求（移除重复的alert）
+            // 发起构建请求
             fetch('/api/2.0/mlflow/models/build-docker', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -524,7 +547,8 @@ def _generate_docker_build_html():
             .then(response => response.json())
             .then(result => {
                 if (result.status === 'success') {
-                    alert('🎉 Docker镜像构建已启动！\\n\\n📋 构建信息：\\n• 镜像名称: ' + result.image_name + '\\n• 构建ID: ' + result.build_id + '\\n\\n💡 请查看服务器日志了解构建进度');
+                    const message = '🎉 Docker镜像构建已启动！\\n\\n📋 构建信息：\\n• 镜像名称: ' + result.image_name + '\\n• 构建ID: ' + result.build_id + '\\n\\n💡 请查看服务器日志了解构建进度';
+                    alert(message);
                 } else {
                     alert('❌ 构建失败: ' + result.message);
                 }
@@ -535,46 +559,50 @@ def _generate_docker_build_html():
             });
         };
         
+
+        
+
+        
+
+        
+        // ================================
+        // 初始化和事件绑定
+        // ================================
+        
         // 初始化
         function init() {
-
-            
             // 绑定按钮事件
             const buildBtn = document.getElementById('mlflow-docker-build-btn');
             if (buildBtn) {
                 buildBtn.addEventListener('click', showBuildDialog);
-
             }
             
-            // 监听路由变化 - 多种事件确保覆盖所有情况
-            window.addEventListener('hashchange', showDockerBuildButton);
-            window.addEventListener('popstate', showDockerBuildButton);
+
             
-            // 监听React路由变化（如果可用）
+            // 监听路由变化
+            window.addEventListener('hashchange', showModelActionButtons);
+            window.addEventListener('popstate', showModelActionButtons);
+            
+            // 监听React路由变化
             if (window.history && window.history.pushState) {
                 const originalPushState = window.history.pushState;
                 window.history.pushState = function() {
                     originalPushState.apply(window.history, arguments);
-                    setTimeout(showDockerBuildButton, 100);
+                    setTimeout(showModelActionButtons, 100);
                 };
             }
             
             // 立即检查一次
-            showDockerBuildButton();
+            showModelActionButtons();
             
-            // 然后延迟检查确保React应用完全加载
-            setTimeout(function() {
-                showDockerBuildButton();
-            }, 500);
-            
-            // 移除定期检查 - hashchange事件已足够处理路由变化
+            // 延迟检查确保React应用完全加载
+            setTimeout(showModelActionButtons, 500);
         }
         
         // 智能初始化：等待DOM和React应用都准备好
         function smartInit() {
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', function() {
-                    // DOM加载完成后，等待React应用渲染
                     waitForReactApp();
                 });
             } else {
@@ -583,12 +611,10 @@ def _generate_docker_build_html():
         }
         
         function waitForReactApp() {
-            // 检查React根元素是否存在且有内容
             const reactRoot = document.getElementById('root');
             if (reactRoot && reactRoot.children.length > 0) {
                 init();
             } else {
-                // React还没准备好，短暂延迟后重试
                 setTimeout(waitForReactApp, 100);
             }
         }

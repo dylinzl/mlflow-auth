@@ -11,6 +11,11 @@ import functools
 import importlib
 import logging
 import re
+import subprocess
+import threading
+import uuid
+import os
+import socket
 from datetime import datetime, timedelta
 from typing import Any, Callable
 
@@ -169,6 +174,9 @@ _logger = logging.getLogger(__name__)
 
 auth_config = read_auth_config()
 store = SqlAlchemyStore()
+
+# 全局变量存储运行中的模型服务
+
 
 
 def is_unprotected_route(path: str) -> bool:
@@ -475,6 +483,9 @@ def validate_can_build_docker():
         _logger = logging.getLogger(__name__)
         _logger.error(f"validate_can_build_docker异常: {e}")
         return False
+
+
+
 
 
 BEFORE_REQUEST_HANDLERS = {
@@ -2710,7 +2721,7 @@ def build_model_docker():
     
     try:
         # 1. 获取请求参数
-        request_data = flask_request.get_json() or {}
+        request_data = request.get_json() or {}
         model_name = request_data.get('model_name')
         model_version = request_data.get('model_version') 
         image_name = request_data.get('image_name')
@@ -2769,15 +2780,8 @@ def build_model_docker():
                 original_tracking_uri = mlflow.get_tracking_uri()
                 
                 # 设置正确的跟踪URI（让MLflow能够连接到当前服务器）
-                # 从Flask请求上下文获取服务器地址
-                try:
-                    from flask import has_request_context, request
-                    if has_request_context():
-                        server_uri = f"{request.scheme}://{request.host}"
-                    else:
-                        server_uri = "http://10.120.130.187:5000"
-                except:
-                    server_uri = "http://10.120.130.187:5000"
+                server_uri = _get_current_server_uri()
+                _logger.info(f"[{build_id}] 使用服务器URI: {server_uri}")
                 
                 # 设置MLflow环境
                 mlflow.set_tracking_uri(server_uri)
@@ -2843,6 +2847,81 @@ def build_model_docker():
 
 
 # 所有复杂的辅助函数已删除 - 直接使用MLflow原生API
+
+
+
+
+
+def _get_current_server_uri():
+    """动态获取当前MLflow服务器的URI"""
+    import logging
+    _logger = logging.getLogger(__name__)
+    
+    try:
+        from flask import has_request_context, request
+        if has_request_context():
+            # 最优方案：从请求上下文获取
+            server_uri = f"{request.scheme}://{request.host}"
+            _logger.info(f"从请求上下文获取服务器URI: {server_uri}")
+            return server_uri
+    except Exception as e:
+        _logger.debug(f"无法从请求上下文获取URI: {e}")
+    
+    # 备选方案：从环境变量或网络接口获取
+    try:
+        import socket
+        import os
+        
+        # 尝试从环境变量获取端口
+        port = "5000"  # 默认端口
+        if 'MLFLOW_PORT' in os.environ:
+            port = os.environ['MLFLOW_PORT']
+        elif hasattr(os, 'argv'):
+            # 尝试从命令行参数解析端口
+            import sys
+            for i, arg in enumerate(sys.argv):
+                if arg == '--port' and i + 1 < len(sys.argv):
+                    port = sys.argv[i + 1]
+                    break
+        
+        # 获取本机在网络中的实际IP地址
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('8.8.8.8', 80))  # 连接到外部地址来获取本机IP
+            local_ip = s.getsockname()[0]
+        
+        server_uri = f"http://{local_ip}:{port}"
+        _logger.info(f"从网络接口获取服务器URI: {server_uri}")
+        return server_uri
+        
+    except Exception as e:
+        _logger.debug(f"从网络接口获取URI失败: {e}")
+    
+    # 再次备选：通过hostname获取
+    try:
+        import socket
+        import os
+        
+        port = os.environ.get('MLFLOW_PORT', '5000')
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        server_uri = f"http://{local_ip}:{port}"
+        _logger.info(f"从主机名获取服务器URI: {server_uri}")
+        return server_uri
+        
+    except Exception as e:
+        _logger.debug(f"从主机名获取URI失败: {e}")
+    
+    # 最终备选方案 - 使用127.0.0.1而不是localhost
+    port = os.environ.get('MLFLOW_PORT', '5000')
+    server_uri = f"http://127.0.0.1:{port}"
+    _logger.warning(f"使用最终备选URI: {server_uri}")
+    return server_uri
+
+
+
+
+
+
 
 
 def create_app(app: Flask = base_app):
@@ -2925,6 +3004,8 @@ def create_app(app: Flask = base_app):
     
     def build_model_docker_view():
         return build_model_docker()
+    
+
     
     # 添加登录和登出路由
     app.add_url_rule(
@@ -3074,13 +3155,15 @@ def create_app(app: Flask = base_app):
         methods=["DELETE"],
     )
     
-    # Docker构建API路由
+    # Docker构建和推送API路由
     app.add_url_rule(
         rule=BUILD_MODEL_DOCKER,
         endpoint="build_model_docker",
         view_func=build_model_docker_view,
         methods=["POST"],
     )
+    
+
 
     app.before_request(_before_request)
     app.after_request(_after_request)
